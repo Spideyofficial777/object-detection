@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Object Detection</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #video {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+        
+        .detection-overlay {
+            position: absolute;
+            border: 2px solid;
+            border-radius: 4px;
+            pointer-events: none;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 1px 1px 1px rgba(0,0,0,0.8);
+        }
+        
+        .video-container {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .stats-card {
+            @apply bg-white rounded-lg shadow-md p-4;
+        }
+        
+        .btn-primary {
+            @apply bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors;
+        }
+        
+        .btn-danger {
+            @apply bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors;
+        }
+        
+        .btn-secondary {
+            @apply bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">📹 Live Object Detection</h1>
+            <p class="text-gray-600">Real-time YOLO detection using your camera</p>
+            <a href="/" class="inline-block mt-2 text-blue-600 hover:text-blue-800">← Back to Upload</a>
+        </div>
+
+        <!-- Main Content -->
+        <div class="grid lg:grid-cols-3 gap-8">
+            <!-- Video Section -->
+            <div class="lg:col-span-2">
+                <div class="stats-card">
+                    <div class="video-container mb-4">
+                        <video id="video" autoplay muted playsinline class="w-full bg-gray-900"></video>
+                        <div id="detectionOverlay"></div>
+                    </div>
+                    
+                    <!-- Controls -->
+                    <div class="flex flex-wrap gap-2 justify-center">
+                        <button id="startBtn" class="btn-primary">🎥 Start Camera</button>
+                        <button id="stopBtn" class="btn-danger hidden">⏹️ Stop Camera</button>
+                        <button id="pauseBtn" class="btn-secondary hidden">⏸️ Pause Detection</button>
+                        <button id="resumeBtn" class="btn-secondary hidden">▶️ Resume Detection</button>
+                    </div>
+                    
+                    <div id="status" class="mt-4 text-center text-gray-600">
+                        Click "Start Camera" to begin live detection
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics Section -->
+            <div class="space-y-6">
+                <!-- Current Detections -->
+                <div class="stats-card">
+                    <h3 class="text-lg font-semibold mb-3">🎯 Current Detections</h3>
+                    <div id="currentDetections" class="space-y-2">
+                        <p class="text-gray-500 text-sm">No detections yet</p>
+                    </div>
+                </div>
+
+                <!-- Performance Stats -->
+                <div class="stats-card">
+                    <h3 class="text-lg font-semibold mb-3">📊 Performance</h3>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-600">FPS:</span>
+                            <span id="fps" class="text-sm font-mono">0</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-600">Detection Time:</span>
+                            <span id="detectionTime" class="text-sm font-mono">0ms</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-600">Total Frames:</span>
+                            <span id="totalFrames" class="text-sm font-mono">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detection History -->
+                <div class="stats-card">
+                    <h3 class="text-lg font-semibold mb-3">📈 Detection Summary</h3>
+                    <div id="detectionHistory" class="space-y-1">
+                        <p class="text-gray-500 text-sm">No data yet</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let video;
+        let canvas;
+        let context;
+        let isDetecting = false;
+        let detectionInterval;
+        let frameCount = 0;
+        let lastTime = Date.now();
+        let detectionHistory = {};
+        
+        // DOM elements
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const resumeBtn = document.getElementById('resumeBtn');
+        const status = document.getElementById('status');
+        const detectionOverlay = document.getElementById('detectionOverlay');
+        const currentDetections = document.getElementById('currentDetections');
+        const fpsElement = document.getElementById('fps');
+        const detectionTimeElement = document.getElementById('detectionTime');
+        const totalFramesElement = document.getElementById('totalFrames');
+        const detectionHistoryElement = document.getElementById('detectionHistory');
+
+        // Event listeners
+        startBtn.addEventListener('click', startCamera);
+        stopBtn.addEventListener('click', stopCamera);
+        pauseBtn.addEventListener('click', pauseDetection);
+        resumeBtn.addEventListener('click', resumeDetection);
+
+        async function startCamera() {
+            try {
+                video = document.getElementById('video');
+                
+                // Create hidden canvas for frame capture
+                canvas = document.createElement('canvas');
+                context = canvas.getContext('2d');
+
+                // Get camera stream
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'environment' // Try to use back camera on mobile
+                    } 
+                });
+                
+                video.srcObject = stream;
+                
+                // Wait for video to load
+                video.addEventListener('loadedmetadata', () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    
+                    // Update UI
+                    startBtn.classList.add('hidden');
+                    stopBtn.classList.remove('hidden');
+                    pauseBtn.classList.remove('hidden');
+                    status.textContent = 'Camera started - Beginning detection...';
+                    
+                    // Start detection
+                    startDetection();
+                });
+                
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                status.textContent = 'Error: Could not access camera. Please check permissions.';
+                status.className = 'mt-4 text-center text-red-600';
+            }
+        }
+
+        function stopCamera() {
+            // Stop camera stream
+            if (video && video.srcObject) {
+                const tracks = video.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                video.srcObject = null;
+            }
+            
+            // Stop detection
+            stopDetection();
+            
+            // Reset UI
+            startBtn.classList.remove('hidden');
+            stopBtn.classList.add('hidden');
+            pauseBtn.classList.add('hidden');
+            resumeBtn.classList.add('hidden');
+            status.textContent = 'Camera stopped';
+            status.className = 'mt-4 text-center text-gray-600';
+            
+            // Clear overlays and stats
+            detectionOverlay.innerHTML = '';
+            currentDetections.innerHTML = '<p class="text-gray-500 text-sm">No detections yet</p>';
+            
+            // Reset counters
+            frameCount = 0;
+            detectionHistory = {};
+            updateStats();
+        }
+
+        function startDetection() {
+            isDetecting = true;
+            detectionInterval = setInterval(processFrame, 200); // 5 FPS detection
+        }
+
+        function stopDetection() {
+            isDetecting = false;
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+                detectionInterval = null;
+            }
+        }
+
+        function pauseDetection() {
+            stopDetection();
+            pauseBtn.classList.add('hidden');
+            resumeBtn.classList.remove('hidden');
+            status.textContent = 'Detection paused';
+        }
+
+        function resumeDetection() {
+            startDetection();
+            resumeBtn.classList.add('hidden');
+            pauseBtn.classList.remove('hidden');
+            status.textContent = 'Detection resumed';
+        }
+
+        async function processFrame() {
+            if (!video || !isDetecting || video.videoWidth === 0) return;
+
+            try {
+                // Capture frame
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+                // Send to backend for detection
+                const startTime = Date.now();
+                const response = await fetch('/live_detect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        image: imageData
+                    })
+                });
+
+                const result = await response.json();
+                const detectionTime = Date.now() - startTime;
+
+                if (result.success) {
+                    updateDetections(result.detections);
+                    updateStats(detectionTime);
+                    frameCount++;
+                } else {
+                    console.error('Detection failed:', result.error);
+                }
+
+            } catch (error) {
+                console.error('Error processing frame:', error);
+            }
+        }
+
+        function updateDetections(detections) {
+            // Clear previous overlays
+            detectionOverlay.innerHTML = '';
+
+            if (detections.length === 0) {
+                currentDetections.innerHTML = '<p class="text-gray-500 text-sm">No objects detected</p>';
+                return;
+            }
+
+            // Get video element dimensions and position
+            const videoRect = video.getBoundingClientRect();
+            const scaleX = videoRect.width / video.videoWidth;
+            const scaleY = videoRect.height / video.videoHeight;
+
+            // Create overlays for each detection
+            let detectionsHTML = '';
+            const currentClasses = {};
+
+            detections.forEach((detection, index) => {
+                const [x1, y1, x2, y2] = detection.bbox;
+                
+                // Scale coordinates to video display size
+                const left = x1 * scaleX;
+                const top = y1 * scaleY;
+                const width = (x2 - x1) * scaleX;
+                const height = (y2 - y1) * scaleY;
+
+                // Create overlay element
+                const overlay = document.createElement('div');
+                overlay.className = 'detection-overlay';
+                overlay.style.left = left + 'px';
+                overlay.style.top = top + 'px';
+                overlay.style.width = width + 'px';
+                overlay.style.height = height + 'px';
+                
+                // Color based on class
+                const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+                const color = colors[index % colors.length];
+                overlay.style.borderColor = color;
+                overlay.style.backgroundColor = color + '20';
+                
+                // Add label
+                overlay.innerHTML = `
+                    <div style="background: ${color}; padding: 2px 4px; margin-bottom: 2px; font-size: 10px;">
+                        ${detection.class} (${Math.round(detection.confidence * 100)}%)
+                    </div>
+                `;
+                
+                detectionOverlay.appendChild(overlay);
+
+                // Update current detections count
+                if (!currentClasses[detection.class]) {
+                    currentClasses[detection.class] = 0;
+                }
+                currentClasses[detection.class]++;
+
+                // Update history
+                if (!detectionHistory[detection.class]) {
+                    detectionHistory[detection.class] = 0;
+                }
+                detectionHistory[detection.class]++;
+            });
+
+            // Update current detections display
+            detectionsHTML = Object.entries(currentClasses)
+                .map(([className, count]) => `
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm">${className}</span>
+                        <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">${count}</span>
+                    </div>
+                `).join('');
+
+            currentDetections.innerHTML = detectionsHTML || '<p class="text-gray-500 text-sm">No objects detected</p>';
+        }
+
+        function updateStats(detectionTime = 0) {
+            // Calculate FPS
+            const currentTime = Date.now();
+            const fps = frameCount > 0 ? Math.round(1000 / ((currentTime - lastTime) / frameCount)) : 0;
+            
+            fpsElement.textContent = Math.min(fps, 5); // Cap at 5 FPS (our detection rate)
+            detectionTimeElement.textContent = detectionTime + 'ms';
+            totalFramesElement.textContent = frameCount;
+
+            // Update detection history
+            if (Object.keys(detectionHistory).length > 0) {
+                const historyHTML = Object.entries(detectionHistory)
+                    .sort(([,a], [,b]) => b - a)
+                    .map(([className, count]) => `
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-600">${className}:</span>
+                            <span class="font-mono">${count}</span>
+                        </div>
+                    `).join('');
+                
+                detectionHistoryElement.innerHTML = historyHTML;
+            }
+        }
+
+        // Update FPS counter periodically
+        setInterval(() => {
+            if (isDetecting) {
+                updateStats();
+            }
+        }, 1000);
+
+        // Handle page visibility changes to pause/resume detection
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && isDetecting) {
+                pauseDetection();
+            } else if (!document.hidden && pauseBtn.classList.contains('hidden') && resumeBtn.classList.contains('hidden')) {
+                // Auto-resume if camera is running but detection was paused
+                if (video && video.srcObject && !isDetecting) {
+                    resumeDetection();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

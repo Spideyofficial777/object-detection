@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detection Results</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .result-card {
+            @apply bg-white rounded-lg shadow-lg p-6;
+        }
+        .btn-primary {
+            @apply bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors inline-flex items-center;
+        }
+        .btn-secondary {
+            @apply bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors inline-flex items-center;
+        }
+        .detection-badge {
+            @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+        }
+        .media-container {
+            max-height: 70vh;
+            overflow: hidden;
+            border-radius: 8px;
+        }
+        .media-container img,
+        .media-container video {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">🎯 Detection Results</h1>
+            <p class="text-gray-600">{{ filename }}</p>
+            <div class="mt-4">
+                <a href="/" class="text-blue-600 hover:text-blue-800">← Back to Upload</a>
+                <span class="mx-2 text-gray-400">|</span>
+                <a href="/live" class="text-blue-600 hover:text-blue-800">📹 Live Detection</a>
+            </div>
+        </div>
+
+        <div class="grid lg:grid-cols-3 gap-8">
+            <!-- Media Display -->
+            <div class="lg:col-span-2">
+                <div class="result-card">
+                    <div class="media-container mb-4">
+                        {% if is_video %}
+                        <video controls class="w-full">
+                            <source src="/static/results/{{ filename }}" type="video/mp4">
+                            Your browser does not support the video tag.
+                        </video>
+                        {% else %}
+                        <img src="/static/results/{{ filename }}" alt="Detection Result" class="w-full">
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Action Buttons -->
+                    <div class="flex flex-wrap gap-3 justify-center">
+                        <a href="/download/{{ filename }}" class="btn-primary">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-4-4m4 4l4-4m-4 6V4"></path>
+                            </svg>
+                            Download
+                        </a>
+                        <a href="/result/{{ filename }}?format=json" class="btn-secondary" target="_blank">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                            </svg>
+                            JSON Data
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detection Information -->
+            <div class="space-y-6">
+                <!-- File Information -->
+                <div class="result-card">
+                    <h3 class="text-lg font-semibold mb-3 flex items-center">
+                        📄 File Information
+                    </h3>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Filename:</span>
+                            <span class="font-mono text-right break-all">{{ file_info.filename }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Size:</span>
+                            <span class="font-mono">{{ file_info.size_kb }} KB</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Created:</span>
+                            <span class="font-mono">{{ file_info.created }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Processing Information -->
+                <div class="result-card">
+                    <h3 class="text-lg font-semibold mb-3 flex items-center">
+                        ⚡ Processing Info
+                    </h3>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Model:</span>
+                            <span class="font-mono">{{ model_name }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Runtime:</span>
+                            <span class="font-mono">{{ runtime_ms }} ms</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Objects Found:</span>
+                            <span class="font-mono font-bold text-blue-600">{{ detections|length }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detection Results -->
+                <div class="result-card">
+                    <h3 class="text-lg font-semibold mb-3 flex items-center">
+                        🎯 Detections
+                    </h3>
+                    
+                    {% if detections %}
+                    <div class="space-y-3">
+                        {% for detection in detections %}
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="font-semibold text-gray-800">{{ detection.class }}</span>
+                                {% if detection.count %}
+                                <span class="detection-badge bg-blue-100 text-blue-800">
+                                    {{ detection.count }} found
+                                </span>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-2 text-sm text-gray-600">
+                                <div>
+                                    <span class="font-medium">Confidence:</span>
+                                    <div class="mt-1">
+                                        <div class="bg-gray-200 rounded-full h-2">
+                                            <div class="bg-green-500 h-2 rounded-full transition-all" 
+                                                 style="width: {{ (detection.confidence * 100)|round }}%"></div>
+                                        </div>
+                                        <span class="text-xs">{{ (detection.confidence * 100)|round }}%</span>
+                                    </div>
+                                </div>
+                                
+                                {% if detection.max_confidence %}
+                                <div>
+                                    <span class="font-medium">Max Confidence:</span>
+                                    <div class="mt-1">
+                                        <div class="bg-gray-200 rounded-full h-2">
+                                            <div class="bg-blue-500 h-2 rounded-full transition-all" 
+                                                 style="width: {{ (detection.max_confidence * 100)|round }}%"></div>
+                                        </div>
+                                        <span class="text-xs">{{ (detection.max_confidence * 100)|round }}%</span>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            {% if detection.bbox %}
+                            <div class="mt-2 text-xs text-gray-500 font-mono">
+                                BBox: [{{ "%.0f"|format(detection.bbox[0]) }}, {{ "%.0f"|format(detection.bbox[1]) }}, {{ "%.0f"|format(detection.bbox[2]) }}, {{ "%.0f"|format(detection.bbox[3]) }}]
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-8">
+                        <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        <p class="text-gray-500">No objects detected in this file</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Detection Summary (for videos) -->
+                {% if is_video and detections %}
+                <div class="result-card">
+                    <h3 class="text-lg font-semibold mb-3 flex items-center">
+                        📊 Detection Summary
+                    </h3>
+                    
+                    <div class="space-y-2">
+                        {% for detection in detections|sort(attribute='count', reverse=true) %}
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-600">{{ detection.class }}</span>
+                            <div class="flex items-center space-x-2">
+                                <div class="w-16 bg-gray-200 rounded-full h-2">
+                                    <div class="bg-blue-500 h-2 rounded-full" 
+                                         style="width: {{ (detection.count / detections|map(attribute='count')|max * 100)|round }}%"></div>
+                                </div>
+                                <span class="text-sm font-mono w-8 text-right">{{ detection.count }}</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

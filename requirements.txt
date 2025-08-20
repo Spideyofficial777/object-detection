@@ -1,0 +1,10 @@
+flask==3.0.0
+ultralytics==8.0.220
+torch==2.1.1
+torchvision==0.16.1
+opencv-python==4.8.1.78
+pillow==10.1.0
+numpy==1.26.2
+python-dotenv==1.0.0
+werkzeug==3.0.1
+apscheduler==3.10.4
